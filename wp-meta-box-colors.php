@@ -1,4 +1,14 @@
 <?php
+/*
+Plugin Name: WP Meta Box Colors
+Plugin URI: https://horttcore.de
+Description: Add color picker to posts
+Version: 2.0
+Author: Ralf Hortt
+Author URI: https://horttcore.de
+License: GPL2
+*/
+
 if ( !class_exists( 'WP_Meta_Box_Colors' ) ) :
 
 /**
@@ -8,16 +18,15 @@ class WP_Meta_Box_Colors
 {
 
 
-
 	function __construct()
 	{
 
-		add_action( 'admin_print_styles-post.php', array( $this, 'enqueue_colorpicker' ) );
-		add_action( 'add_meta_boxes', array( $this, 'add_meta_boxes' ) );
-		add_action( 'save_post', array( $this, 'save_post' ) );
+		add_action( 'admin_print_styles-post.php', [$this, 'enqueue_colorpicker'] );
+		add_action( 'add_meta_boxes', [$this, 'add_meta_boxes'] );
+		add_action( 'save_post', [$this, 'save_post'] );
+		add_action( 'register_meta', [$this, 'register_meta'] );
 
 	} // END __construct
-
 
 
 	/**
@@ -34,19 +43,36 @@ class WP_Meta_Box_Colors
 
 		foreach ( $post_types as $post_type ) :
 
-			add_meta_box( 'page-colors', __( 'Colors' ), array( $this, 'meta_box' ), $post_type );
+			add_meta_box( 'page-colors', __( 'Colors' ), array( $this, 'meta_box' ), $post_type, 'side' );
 
 		endforeach;
 
 	} // END add_meta_boxes
 
 
+	/**
+	 * Get registered colors
+	 *
+	 * @param string $post_type Post type
+	 * @return void
+	 */
+	public function get_colors( $post_type = '' )
+	{
+
+		$colors = apply_filters( 'wp-meta-box-colors-fields', [] );
+
+		if ( !$post_type )
+			return $colors;
+
+		return apply_filters( "wp-meta-box-colors-fields-$post_type", $colors );
+
+	} // END get_colors
+
 
 	/**
 	 * Enqueue colorpicker
 	 *
-	 * @param type var Description
-	 * @return return type
+	 * @return void
 	 */
 	public function enqueue_colorpicker()
 	{
@@ -65,7 +91,6 @@ class WP_Meta_Box_Colors
 	} // END enqueue_colorpicker
 
 
-
 	/**
 	 * Meta box
 	 *
@@ -77,17 +102,14 @@ class WP_Meta_Box_Colors
 
 		$colors = get_post_meta( $post->ID, '_colors', TRUE );
 
-		$fields = apply_filters( 'wp-meta-box-colors-fields', array(
-			'page-color' => __( 'Color' ),
-		), $post );
-
+		$fields = $this->get_colors( $post->post_type );
 		?>
 		<table class="form-table">
 			<?php foreach ( $fields as $field => $label ) : ?>
 				<tr>
 					<td><label for="wp-meta-box-colors-<?php echo esc_attr( $field ) ?>"><?php echo $label ?></label></td>
 					<td>
-						<input type="text" name="wp-meta-box-colors[<?php echo esc_attr( $field ) ?>]" value="<?php if ( isset( $colors[$field] ) ) echo esc_attr( $colors[$field] ) ?>" id="wp-meta-box-colors-<?php echo esc_attr( $field ) ?>">
+						<input type="text" name="wp-meta-box-colors[<?php echo esc_attr( $field ) ?>]" value="<?php echo esc_attr( get_post_meta( $post->ID, "wp-meta-box-colors-$field", TRUE ) ) ?>" id="wp-meta-box-colors-<?php echo esc_attr( $field ) ?>">
 					</td>
 				</tr>
 			<?php endforeach; ?>
@@ -104,6 +126,31 @@ class WP_Meta_Box_Colors
 
 	} // END meta_box
 
+
+	/**
+	 * Register meta field
+	 *
+	 * @return void
+	 */
+	public function register_meta()
+	{
+
+		$post_types = get_post_types_by_support( 'colors' );
+
+		foreach ( $post_types as $post_type ) :
+
+			foreach ( $this->get_colors( $post_type ) as $key => $value ) :
+
+				register_meta( $post_type, $key, [
+					'type' => 'string',
+					'show_in_rest' => TRUE,
+				] );
+
+			endforeach;
+
+		endforeach;
+
+	}
 
 
 	/**
@@ -122,16 +169,16 @@ class WP_Meta_Box_Colors
 		if ( !isset( $_POST['wp-meta-box-colors-nonce'] ) || !wp_verify_nonce( $_POST['wp-meta-box-colors-nonce'], 'save-wp-meta-box-colors' ) )
 			return;
 
-		$colors = array_map( 'sanitize_text_field', $_POST['wp-meta-box-colors'] );
-		$colors = array_filter( $colors );
+		foreach ( $this->get_colors() as $key => $value) :
 
-		if ( !empty( $colors ) )
-			update_post_meta( $post_id, '_colors', $colors );
-		else
-			delete_post_meta( $post_id, '_colors' );
+			if ( !isset( $_POST['wp-meta-box-colors'][$key] ) )
+				continue;
+
+			update_post_meta( $post_id, "wp-meta-box-colors-$key", sanitize_text_field( $_POST['wp-meta-box-colors'][$key] ) );
+
+		endforeach;
 
 	} // END save_post
-
 
 
 } // END class WP_Meta_Box_Colors
